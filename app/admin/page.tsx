@@ -28,8 +28,14 @@ import {
     MoreVertical,
     KeyRound,
     Settings,
+    FileSpreadsheet,
+    FileText,
+    Download,
 } from 'lucide-react'
 import Link from 'next/link'
+import * as XLSX from 'xlsx'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 function formatCurrency(amount: number) {
     return new Intl.NumberFormat('id-ID', {
@@ -93,6 +99,7 @@ export default function AdminDashboard() {
     const [changePwError, setChangePwError] = useState<string | null>(null)
     const [changePwSuccess, setChangePwSuccess] = useState(false)
     const [loginLoading, setLoginLoading] = useState(false)
+   
 
     // Auth - verify against Supabase
     async function handleLogin(e: React.FormEvent) {
@@ -292,6 +299,7 @@ export default function AdminDashboard() {
             setManualError('Jumlah pembayaran tidak valid')
             return
         }
+        
 
         setManualLoading(true)
         setManualError(null)
@@ -338,6 +346,217 @@ export default function AdminDashboard() {
     const lunasCount = members.filter(m => m.is_lunas).length
     const totalCollected = members.reduce((sum, m) => sum + m.total_paid, 0)
     const totalTarget = members.reduce((sum, m) => sum + m.total_price, 0)
+
+    // Size recap calculation
+    function getSizeRecap() {
+        const sizeOrder = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL']
+        const sizeCount: Record<string, number> = {}
+        members.forEach(m => {
+            sizeCount[m.size] = (sizeCount[m.size] || 0) + 1
+        })
+        // Return sorted by the predefined order
+        return sizeOrder
+            .filter(size => sizeCount[size])
+            .map(size => ({ size, count: sizeCount[size] }))
+    }
+
+    // Export to Excel
+    function handleExportExcel() {
+        const wb = XLSX.utils.book_new()
+
+        // Sheet 1: Daftar Anggota & Ukuran
+        const memberRows = members.map((m, i) => ({
+            'No': i + 1,
+            'Nama': m.name,
+            'Ukuran': m.size,
+            'Total Harga': m.total_price,
+            'Terbayar': m.total_paid,
+            'Sisa': m.remaining,
+            'Status': m.is_lunas ? 'LUNAS' : 'Belum Lunas',
+        }))
+        const ws1 = XLSX.utils.json_to_sheet(memberRows)
+
+        // Set column widths
+        ws1['!cols'] = [
+            { wch: 4 },   // No
+            { wch: 20 },  // Nama
+            { wch: 10 },  // Ukuran
+            { wch: 15 },  // Total Harga
+            { wch: 15 },  // Terbayar
+            { wch: 15 },  // Sisa
+            { wch: 14 },  // Status
+        ]
+        XLSX.utils.book_append_sheet(wb, ws1, 'Daftar Anggota')
+
+        // Sheet 2: Rekap Ukuran
+        const sizeRecap = getSizeRecap()
+        const recapRows = sizeRecap.map(r => ({
+            'Ukuran': r.size,
+            'Jumlah': r.count,
+        }))
+        recapRows.push({ 'Ukuran': 'TOTAL', 'Jumlah': members.length })
+        const ws2 = XLSX.utils.json_to_sheet(recapRows)
+        ws2['!cols'] = [
+            { wch: 10 },
+            { wch: 10 },
+        ]
+        XLSX.utils.book_append_sheet(wb, ws2, 'Rekap Ukuran')
+
+        XLSX.writeFile(wb, `Data_PDH_Karpil_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    }
+
+    // Export to PDF
+    function handleExportPDF() {
+        const doc = new jsPDF()
+        const pageWidth = doc.internal.pageSize.getWidth()
+
+        // Title
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        doc.text('Data Anggota PDH', pageWidth / 2, 20, { align: 'center' })
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text('KPPM GKJW Karangpilang', pageWidth / 2, 27, { align: 'center' })
+        doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, pageWidth / 2, 33, { align: 'center' })
+
+        // Table 1: Daftar Anggota
+        doc.setFontSize(12)
+        doc.setFont('helvetica', 'bold')
+        doc.text('Daftar Nama & Ukuran', 14, 44)
+
+        const memberTableBody = members.map((m, i) => [
+            (i + 1).toString(),
+            m.name,
+            m.size,
+            formatCurrency(m.total_paid),
+            formatCurrency(m.remaining),
+            m.is_lunas ? 'LUNAS' : 'Belum Lunas',
+        ])
+
+        autoTable(doc, {
+            startY: 48,
+            head: [['No', 'Nama', 'Ukuran', 'Terbayar', 'Sisa', 'Status']],
+            body: memberTableBody,
+            headStyles: {
+                fillColor: [22, 163, 74],
+                textColor: [255, 255, 255],
+                fontStyle: 'bold',
+                halign: 'center',
+            },
+            columnStyles: {
+                0: { halign: 'center', cellWidth: 12 },
+                1: { cellWidth: 40 },
+                2: { halign: 'center', cellWidth: 20 },
+                3: { halign: 'right', cellWidth: 30 },
+                4: { halign: 'right', cellWidth: 30 },
+                5: { halign: 'center', cellWidth: 30 },
+            },
+            styles: {
+                fontSize: 9,
+                cellPadding: 3,
+            },
+            alternateRowStyles: {
+                fillColor: [240, 253, 244],
+            },
+            didParseCell: (data) => {
+                if (data.section === 'body' && data.column.index === 5) {
+                    if (data.cell.raw === 'LUNAS') {
+                        data.cell.styles.textColor = [22, 163, 74]
+                        data.cell.styles.fontStyle = 'bold'
+                    } else {
+                        data.cell.styles.textColor = [220, 38, 38]
+                    }
+                }
+            },
+        })
+
+        // Table 2: Rekap Ukuran
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const lastTableY = (doc as any).lastAutoTable?.finalY || 48 + (members.length * 10)
+        const recapStartY = lastTableY + 14
+
+        // Check if we need a new page
+        if (recapStartY > doc.internal.pageSize.getHeight() - 60) {
+            doc.addPage()
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            doc.text('Rekap Ukuran', 14, 20)
+
+            const sizeRecap = getSizeRecap()
+            const recapBody = sizeRecap.map(r => [r.size, r.count.toString()])
+            recapBody.push(['TOTAL', members.length.toString()])
+
+            autoTable(doc, {
+                startY: 24,
+                head: [['Ukuran', 'Jumlah']],
+                body: recapBody,
+                headStyles: {
+                    fillColor: [22, 163, 74],
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 30 },
+                    1: { halign: 'center', cellWidth: 30 },
+                },
+                styles: {
+                    fontSize: 10,
+                    cellPadding: 4,
+                },
+                alternateRowStyles: {
+                    fillColor: [240, 253, 244],
+                },
+                didParseCell: (data) => {
+                    if (data.section === 'body' && data.row.index === sizeRecap.length) {
+                        data.cell.styles.fontStyle = 'bold'
+                        data.cell.styles.fillColor = [220, 252, 231]
+                    }
+                },
+                tableWidth: 60,
+            })
+        } else {
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            doc.text('Rekap Ukuran', 14, recapStartY)
+
+            const sizeRecap = getSizeRecap()
+            const recapBody = sizeRecap.map(r => [r.size, r.count.toString()])
+            recapBody.push(['TOTAL', members.length.toString()])
+
+            autoTable(doc, {
+                startY: recapStartY + 4,
+                head: [['Ukuran', 'Jumlah']],
+                body: recapBody,
+                headStyles: {
+                    fillColor: [22, 163, 74],
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 30 },
+                    1: { halign: 'center', cellWidth: 30 },
+                },
+                styles: {
+                    fontSize: 10,
+                    cellPadding: 4,
+                },
+                alternateRowStyles: {
+                    fillColor: [240, 253, 244],
+                },
+                didParseCell: (data) => {
+                    if (data.section === 'body' && data.row.index === sizeRecap.length) {
+                        data.cell.styles.fontStyle = 'bold'
+                        data.cell.styles.fillColor = [220, 252, 231]
+                    }
+                },
+                tableWidth: 60,
+            })
+        }
+
+        doc.save(`Data_PDH_Karpil_${new Date().toISOString().slice(0, 10)}.pdf`)
+    }
 
     const sizeOptions = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL']
 
@@ -780,6 +999,57 @@ export default function AdminDashboard() {
                                             <p className="text-[10px] text-muted">Pembayaran manual</p>
                                         </div>
                                     </button>
+                                </div>
+
+                                {/* Export Buttons */}
+                                <div className="bg-white rounded-xl p-4" style={{ boxShadow: 'var(--shadow)' }}>
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <Download className="w-4 h-4 text-primary" />
+                                        <h3 className="text-sm font-bold text-foreground">Ekspor Data</h3>
+                                    </div>
+                                    <p className="text-xs text-muted mb-3">Unduh daftar nama, ukuran, dan rekap jumlah per ukuran</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            onClick={handleExportExcel}
+                                            disabled={members.length === 0}
+                                            className="flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm font-semibold py-3 rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all shadow-md shadow-green-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            <FileSpreadsheet className="w-4 h-4" />
+                                            Excel
+                                        </button>
+                                        <button
+                                            onClick={handleExportPDF}
+                                            disabled={members.length === 0}
+                                            className="flex items-center justify-center gap-2 bg-gradient-to-r from-red-500 to-rose-600 text-white text-sm font-semibold py-3 rounded-xl hover:from-red-600 hover:to-rose-700 transition-all shadow-md shadow-red-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            <FileText className="w-4 h-4" />
+                                            PDF
+                                        </button>
+                                    </div>
+
+                                    {/* Size Recap Preview */}
+                                    {members.length > 0 && (
+                                        <div className="mt-3 pt-3 border-t border-gray-100">
+                                            <p className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">Rekap Ukuran</p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {getSizeRecap().map(r => (
+                                                    <span
+                                                        key={r.size}
+                                                        className="inline-flex items-center gap-1 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg text-xs"
+                                                    >
+                                                        <span className="font-bold text-foreground">{r.size}</span>
+                                                        <span className="text-muted">×</span>
+                                                        <span className="font-semibold text-primary">{r.count}</span>
+                                                    </span>
+                                                ))}
+                                                <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg text-xs">
+                                                    <span className="font-bold text-emerald-700">Total</span>
+                                                    <span className="text-emerald-500">×</span>
+                                                    <span className="font-semibold text-emerald-700">{members.length}</span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Add Member Modal */}
