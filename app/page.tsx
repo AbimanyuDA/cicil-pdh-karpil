@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase, type Member, type Transaction } from '@/lib/supabase'
+import { QRCodeSVG } from 'qrcode.react'
+import { generateDynamicQRIS } from '@/lib/qris'
 import {
   Search,
   Upload,
@@ -20,11 +22,9 @@ import {
   Loader2,
   ShieldCheck,
   QrCode,
-  ChevronUp,
   MessageCircle,
   Banknote,
 } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
 
 function formatCurrency(amount: number) {
@@ -71,7 +71,6 @@ export default function MemberDashboard() {
   const [proofPreview, setProofPreview] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
-  const [showQris, setShowQris] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<'qris' | 'cash'>('qris')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(false)
@@ -79,6 +78,10 @@ export default function MemberDashboard() {
   const [loading, setLoading] = useState(true)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [dynamicQr, setDynamicQr] = useState<string | null>(null)
+  const [timeLeft, setTimeLeft] = useState<number>(0)
+  const [generatedAmount, setGeneratedAmount] = useState<number | null>(null)
+  const [hasGeneratedQr, setHasGeneratedQr] = useState(false)
 
   // Load members
   useEffect(() => {
@@ -129,6 +132,9 @@ export default function MemberDashboard() {
   const totalPaid = transactions
     .filter(t => t.status === 'approved')
     .reduce((sum, t) => sum + t.amount, 0)
+  const pendingTransactions = transactions.filter(t => t.status === 'pending')
+  const hasPendingPayment = pendingTransactions.length > 0
+  const latestPendingTransaction = pendingTransactions[0] ?? null
 
   const remaining = selectedMember ? selectedMember.total_price - totalPaid : 0
   const isLunas = selectedMember ? remaining <= 0 : false
@@ -228,6 +234,46 @@ export default function MemberDashboard() {
   const quickAmounts = [5000, 10000, 15000, 20000, 30000, 50000, 80000, 100000, 160000]
 
   // Format number with dot separator: 160000 -> "160.000"
+  const STATIC_QRIS = '00020101021126570011ID.DANA.WWW011893600915363797436702096379743670303UMI51440014ID.CO.QRIS.WWW0215ID10243210741390303UMI5204581353033605802ID5912Waroeng Dans6013Kota Surabaya6105602226304AD4D'
+
+  function handleGenerate() {
+    if (!amount) {
+      setError('Masukkan nominal terlebih dahulu')
+      return
+    }
+
+    const amountNum = parseInt(amount)
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setError('Jumlah pembayaran tidak valid')
+      return
+    }
+
+    try {
+      const qrString = generateDynamicQRIS(STATIC_QRIS, amountNum)
+      setDynamicQr(qrString)
+      setTimeLeft(300)
+      setGeneratedAmount(amountNum)
+      setHasGeneratedQr(true)
+      setError(null)
+    } catch (err) {
+      setDynamicQr(null)
+      setTimeLeft(0)
+      setGeneratedAmount(null)
+      setHasGeneratedQr(false)
+      setError(err instanceof Error ? err.message : 'Gagal membuat QRIS dinamis')
+    }
+  }
+
+  // Countdown timer for dynamic QR
+  useEffect(() => {
+    if (timeLeft <= 0) {
+      return
+    }
+
+    const timer = setTimeout(() => setTimeLeft(t => t - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [timeLeft])
+
   function formatAmountDisplay(val: string): string {
     const num = val.replace(/\D/g, '')
     if (!num) return ''
@@ -417,6 +463,44 @@ export default function MemberDashboard() {
         {/* Payment Method Selection & Forms */}
         {selectedMember && !isLunas && (
           <div className="animate-slide-up space-y-4">
+            {hasPendingPayment && latestPendingTransaction ? (
+              <div
+                className="bg-white rounded-2xl p-5 space-y-4"
+                style={{ boxShadow: 'var(--shadow)' }}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                    <Clock className="w-5 h-5 text-amber-700" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-base font-bold text-foreground">Pembayaran sedang diverifikasi</h3>
+                    <p className="text-sm text-muted mt-1">
+                      Sistem mendeteksi kamu sudah mengirim pembayaran dan saat ini admin sedang memverifikasinya.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+                  <div className="flex justify-between gap-3 text-sm">
+                    <span className="text-muted">Nominal</span>
+                    <span className="font-semibold text-foreground">{formatCurrency(latestPendingTransaction.amount)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 text-sm">
+                    <span className="text-muted">Dikirim pada</span>
+                    <span className="font-medium text-foreground text-right">{formatDate(latestPendingTransaction.created_at)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 text-sm">
+                    <span className="text-muted">Status</span>
+                    <StatusBadge status={latestPendingTransaction.status} />
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted text-center">
+                  Setelah admin menyetujui pembayaran ini, saldo cicilan akan otomatis terupdate. Jika pembayaran ditolak, kamu bisa upload ulang bukti transfer.
+                </p>
+              </div>
+            ) : (
+              <>
             {/* Payment Method Tabs */}
             <div
               className="bg-white rounded-2xl p-1.5 flex gap-1"
@@ -449,68 +533,21 @@ export default function MemberDashboard() {
             {/* QRIS Flow */}
             {paymentMethod === 'qris' && (
               <>
-                {/* QRIS Code */}
-                <div
-                  className="bg-white rounded-2xl overflow-hidden"
-                  style={{ boxShadow: 'var(--shadow)' }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setShowQris(!showQris)}
-                    className="w-full flex items-center justify-between p-4 hover:bg-green-50/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-md">
-                        <QrCode className="w-5 h-5 text-white" />
-                      </div>
-                      <div className="text-left">
-                        <h3 className="text-sm font-bold text-foreground">Scan QRIS untuk Bayar</h3>
-                        <p className="text-xs text-muted">Waroeng Dans • Tap untuk buka QR</p>
-                      </div>
-                    </div>
-                    {showQris ? (
-                      <ChevronUp className="w-4 h-4 text-muted" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-muted" />
-                    )}
-                  </button>
-
-                  {showQris && (
-                    <div className="px-4 pb-4 animate-fade-in">
-                      <div className="bg-gray-50 rounded-xl p-4 flex flex-col items-center">
-                        <div className="w-full max-w-[280px] aspect-square relative rounded-lg overflow-hidden border-2 border-gray-200 bg-white">
-                          <Image
-                            src="/qris.jpg"
-                            alt="QRIS Waroeng Dans"
-                            fill
-                            className="object-contain p-2"
-                            priority
-                          />
-                        </div>
-                        <div className="mt-3 text-center">
-                          <p className="text-xs font-semibold text-foreground">Waroeng Dans</p>
-                          <p className="text-[10px] text-muted mt-0.5">NMID: ID1024321074139</p>
-                        </div>
-                        <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 w-full">
-                          <p className="text-[11px] text-amber-800 text-center">
-                            💡 Scan QRIS di atas, lalu screenshot bukti transfernya dan upload di bawah
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 {/* QRIS Payment Form */}
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div
                     className="bg-white rounded-2xl p-5 space-y-4"
                     style={{ boxShadow: 'var(--shadow)' }}
                   >
-                    <h3 className="text-base font-bold text-foreground flex items-center gap-2">
-                      <Send className="w-4 h-4 text-primary" />
-                      Upload Bukti Transfer
-                    </h3>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-md">
+                        <QrCode className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-foreground">Pembayaran QRIS</h3>
+                        <p className="text-xs text-muted mt-0.5">Generate QR, scan, lalu upload bukti pembayaran</p>
+                      </div>
+                    </div>
 
                     {/* Amount */}
                     <div>
@@ -543,18 +580,50 @@ export default function MemberDashboard() {
                           </button>
                         ))}
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={handleGenerate}
+                        disabled={!amount}
+                        className="w-full mt-4 bg-gradient-to-r from-red-500 to-rose-600 text-white font-semibold py-3 rounded-xl hover:from-red-600 hover:to-rose-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md shadow-red-100"
+                      >
+                        <QrCode className="w-4 h-4" />
+                        Generate QRIS
+                      </button>
+
+                      {dynamicQr && timeLeft > 0 && (
+                        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 flex flex-col items-center gap-3 animate-fade-in">
+                          <div className="bg-white p-3 rounded-xl border-2 border-emerald-200 shadow-sm">
+                            <QRCodeSVG
+                              value={dynamicQr}
+                              size={220}
+                              level="M"
+                              includeMargin={true}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 bg-white border border-amber-200 rounded-lg px-4 py-2">
+                            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                            <p className="text-sm font-semibold text-amber-800">
+                              QR berlaku: {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+                            </p>
+                          </div>
+                          <p className="text-xs font-medium text-center text-foreground">
+                            Scan QRIS ini untuk bayar {formatCurrency(generatedAmount ?? 0)}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* File Upload */}
                     <div>
-                      <label className="block text-xs font-medium text-muted mb-1.5">Bukti Transfer</label>
+                      <label className="block text-xs font-medium text-muted mb-1.5">Bukti Pembayaran</label>
                       {!proofPreview ? (
                         <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-border rounded-xl p-6 cursor-pointer hover:border-primary/50 hover:bg-green-50/50 transition-all">
                           <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center">
                             <Upload className="w-5 h-5 text-primary" />
                           </div>
                           <div className="text-center">
-                            <p className="text-sm font-medium text-foreground">Upload foto bukti transfer</p>
+                            <p className="text-sm font-medium text-foreground">Upload foto bukti pembayaran</p>
                             <p className="text-xs text-muted mt-0.5">JPG, PNG atau HEIC • Maks 5MB</p>
                           </div>
                           <input
@@ -658,6 +727,8 @@ export default function MemberDashboard() {
                   Setelah membayar cash, bendahara akan mencatat pembayaranmu di sistem.
                 </p>
               </div>
+            )}
+              </>
             )}
           </div>
         )}
