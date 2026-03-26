@@ -31,6 +31,7 @@ import {
     FileSpreadsheet,
     FileText,
     Download,
+    Pencil,
 } from 'lucide-react'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
@@ -90,6 +91,12 @@ export default function AdminDashboard() {
     const [manualError, setManualError] = useState<string | null>(null)
     const [memberSearch, setMemberSearch] = useState('')
     const [openActionMenu, setOpenActionMenu] = useState<string | null>(null)
+    // Edit member
+    const [editMember, setEditMember] = useState<MemberWithPayments | null>(null)
+    const [editName, setEditName] = useState('')
+    const [editSize, setEditSize] = useState('M')
+    const [editLoading, setEditLoading] = useState(false)
+    const [editError, setEditError] = useState<string | null>(null)
     // Change password
     const [showChangePassword, setShowChangePassword] = useState(false)
     const [oldPassword, setOldPassword] = useState('')
@@ -99,7 +106,7 @@ export default function AdminDashboard() {
     const [changePwError, setChangePwError] = useState<string | null>(null)
     const [changePwSuccess, setChangePwSuccess] = useState(false)
     const [loginLoading, setLoginLoading] = useState(false)
-   
+
 
     // Auth - verify against Supabase
     async function handleLogin(e: React.FormEvent) {
@@ -287,6 +294,42 @@ export default function AdminDashboard() {
         setDeleting(false)
     }
 
+    // Edit member
+    function openEditMember(m: MemberWithPayments) {
+        setEditMember(m)
+        setEditName(m.name)
+        setEditSize(m.size)
+        setEditError(null)
+    }
+
+    async function handleEditMember(e: React.FormEvent) {
+        e.preventDefault()
+        if (!editMember) return
+        if (!editName.trim()) {
+            setEditError('Nama peserta wajib diisi')
+            return
+        }
+
+        setEditLoading(true)
+        setEditError(null)
+
+        const { error } = await supabase
+            .from('members')
+            .update({
+                name: editName.trim(),
+                size: editSize,
+            })
+            .eq('id', editMember.id)
+
+        if (error) {
+            setEditError('Gagal menyimpan: ' + error.message)
+        } else {
+            setEditMember(null)
+            setRefreshKey(k => k + 1)
+        }
+        setEditLoading(false)
+    }
+
     // Manual payment (for cash)
     async function handleManualPayment(e: React.FormEvent) {
         e.preventDefault()
@@ -299,7 +342,7 @@ export default function AdminDashboard() {
             setManualError('Jumlah pembayaran tidak valid')
             return
         }
-        
+
 
         setManualLoading(true)
         setManualError(null)
@@ -1302,6 +1345,78 @@ export default function AdminDashboard() {
                                     </div>
                                 )}
 
+                                {/* Edit Member Modal */}
+                                {editMember && (
+                                    <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => { setEditMember(null); setEditError(null) }}>
+                                        <div className="bg-white rounded-2xl w-full max-w-sm animate-slide-up" style={{ boxShadow: 'var(--shadow-lg)' }} onClick={e => e.stopPropagation()}>
+                                            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+                                                <div className="flex items-center gap-2">
+                                                    <Pencil className="w-5 h-5 text-amber-600" />
+                                                    <h3 className="text-base font-bold text-foreground">Edit Data</h3>
+                                                </div>
+                                                <button onClick={() => { setEditMember(null); setEditError(null) }} className="text-muted hover:text-foreground transition-colors">
+                                                    <X className="w-5 h-5" />
+                                                </button>
+                                            </div>
+
+                                            <form onSubmit={handleEditMember} className="p-5 space-y-4">
+                                                {editError && (
+                                                    <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs flex items-center gap-1.5">
+                                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                                        {editError}
+                                                    </div>
+                                                )}
+
+                                                <div>
+                                                    <label className="block text-xs font-medium text-muted mb-1.5">Nama Peserta</label>
+                                                    <input
+                                                        type="text"
+                                                        value={editName}
+                                                        onChange={e => setEditName(e.target.value)}
+                                                        placeholder="Masukkan nama lengkap"
+                                                        className="w-full px-4 py-3 bg-gray-50 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                                        autoFocus
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-xs font-medium text-muted mb-1.5">Ukuran Baju</label>
+                                                    <div className="relative">
+                                                        <select
+                                                            value={editSize}
+                                                            onChange={e => setEditSize(e.target.value)}
+                                                            className="w-full px-4 py-3 bg-gray-50 border border-border rounded-xl text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                                        >
+                                                            {sizeOptions.map(s => (
+                                                                <option key={s} value={s}>{s}</option>
+                                                            ))}
+                                                        </select>
+                                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    type="submit"
+                                                    disabled={editLoading || !editName.trim()}
+                                                    className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold py-3.5 rounded-xl hover:from-amber-600 hover:to-orange-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-amber-200"
+                                                >
+                                                    {editLoading ? (
+                                                        <>
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                                            Menyimpan...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Pencil className="w-4 h-4" />
+                                                            Simpan Perubahan
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div
                                     className="bg-white rounded-xl overflow-hidden"
                                     style={{ boxShadow: 'var(--shadow)' }}
@@ -1349,6 +1464,16 @@ export default function AdminDashboard() {
                                                                 <>
                                                                     <div className="fixed inset-0 z-40" onClick={() => setOpenActionMenu(null)} />
                                                                     <div className="absolute right-0 top-full mt-1 bg-white rounded-lg border border-border py-1 z-50 w-44 animate-fade-in" style={{ boxShadow: 'var(--shadow-md)' }}>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                openEditMember(m)
+                                                                                setOpenActionMenu(null)
+                                                                            }}
+                                                                            className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-amber-50 flex items-center gap-2 transition-colors"
+                                                                        >
+                                                                            <Pencil className="w-3.5 h-3.5 text-amber-600" />
+                                                                            Edit Peserta
+                                                                        </button>
                                                                         <button
                                                                             onClick={() => {
                                                                                 setManualMemberId(m.id)

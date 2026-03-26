@@ -31,9 +31,18 @@ ALTER TABLE members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 
 -- 5. RLS Policies
--- Members: public read
+-- Members: public read, insert, update, delete
 CREATE POLICY "Allow public read on members"
   ON members FOR SELECT USING (true);
+
+CREATE POLICY "Allow public insert on members"
+  ON members FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow public update on members"
+  ON members FOR UPDATE USING (true);
+
+CREATE POLICY "Allow public delete on members"
+  ON members FOR DELETE USING (true);
 
 -- Transactions: public read, insert, update
 CREATE POLICY "Allow public read on transactions"
