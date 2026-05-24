@@ -24,6 +24,7 @@ import {
   QrCode,
   MessageCircle,
   Banknote,
+  TrendingUp,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -306,13 +307,22 @@ export default function MemberDashboard() {
             <h1 className="text-lg font-bold text-primary-dark tracking-tight">Cicilan PDH</h1>
             <p className="text-xs text-muted">KPPM GKJW Karangpilang</p>
           </div>
-          <Link
-            href="/admin"
-            className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-primary transition-colors px-3 py-1.5 rounded-full hover:bg-green-50"
-          >
-            <ShieldCheck className="w-4 h-4" />
-            Admin
-          </Link>
+          <div className="flex items-center gap-1">
+            <Link
+              href="/rekap"
+              className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-primary transition-colors px-3 py-1.5 rounded-full hover:bg-green-50"
+            >
+              <TrendingUp className="w-4 h-4 text-green-600" />
+              Rekap
+            </Link>
+            <Link
+              href="/admin"
+              className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-primary transition-colors px-3 py-1.5 rounded-full hover:bg-green-50"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Admin
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -790,10 +800,19 @@ export default function MemberDashboard() {
         )}
 
         {/* Footer */}
-        <footer className="text-center pb-6 pt-4">
+        <footer className="text-center pb-6 pt-4 space-y-2">
           <p className="text-xs text-muted">
             © 2026 KPPM GKJW Karangpilang
           </p>
+          <div className="flex justify-center gap-4 text-[11px] font-semibold text-muted">
+            <Link href="/rekap" className="hover:text-primary transition-colors">
+              Rekap Pembayaran (Publik)
+            </Link>
+            <span>•</span>
+            <Link href="/admin" className="hover:text-primary transition-colors">
+              Admin Panel
+            </Link>
+          </div>
         </footer>
       </main>
     </div>

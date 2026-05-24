@@ -827,6 +827,13 @@ export default function AdminDashboard() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                        <Link
+                            href="/rekap"
+                            className="text-muted hover:text-primary transition-colors p-2 rounded-full hover:bg-green-50"
+                            title="Rekap Pembayaran (Publik)"
+                        >
+                            <TrendingUp className="w-4 h-4" />
+                        </Link>
                         <button
                             onClick={() => setShowChangePassword(true)}
                             className="text-muted hover:text-primary transition-colors p-2 rounded-full hover:bg-green-50"
